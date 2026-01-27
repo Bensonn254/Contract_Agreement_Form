@@ -1044,10 +1044,43 @@
 
             } else {
                 // CLIENT MODE
+                
+                // NEW: Check if this is a client viewing a completed agreement (via email link)
+                if (agreementIdFromUrl) {
+                    try {
+                        const data = await fetchAgreementFromFirebase(agreementIdFromUrl);
+                        if (data && data.status === 'completed') {
+                            // Show read-only view of the final agreement
+                            document.getElementById('clientView').innerHTML = `
+                                <div class="success-container" style="text-align: center; padding: 3rem;">
+                                    <div style="background: #27ae60; color: white; width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; font-size: 2rem;">✓</div>
+                                    <h1 style="color: #27ae60; font-family: 'Playfair Display', serif; margin-bottom: 1rem;">Agreement Completed</h1>
+                                    <p style="font-size: 1.2rem; margin-bottom: 2rem;">This agreement has been signed by both parties.</p>
+                                    
+                                    <div style="background: #f8f9fa; padding: 2rem; border-radius: 12px; margin-bottom: 2rem; text-align: left;">
+                                        <p><strong>Client:</strong> ${data.clientName}</p>
+                                        <p><strong>Date:</strong> ${data.date}</p>
+                                        <p><strong>Status:</strong> <span style="color: #27ae60; font-weight: bold;">Fully Signed</span></p>
+                                    </div>
+
+                                    <button onclick="generateFinalPDF(${JSON.stringify(data).replace(/"/g, '&quot;')})" class="btn btn-primary">
+                                        Download Final PDF
+                                    </button>
+                                </div>
+                            `;
+                            return; // Stop further initialization
+                        }
+                    } catch (e) {
+                         console.error("Error fetching for client view", e);
+                    }
+                }
+
                 const hasSubmitted = localStorage.getItem('agreementSubmitted');
+                const submissionDate = localStorage.getItem('submissionDate');
                 if (hasSubmitted === 'true') {
-                   // Optional: block resubmission or just show warning
-                   // document.getElementById('alreadySubmittedWarning').classList.remove('hidden');
+                   document.getElementById('clientView').classList.add('hidden');
+                   document.getElementById('alreadySubmittedWarning').classList.remove('hidden');
+                   document.getElementById('submissionDate').textContent = submissionDate || 'Unknown date';
                 }
 
                 clientPad = new SignaturePad(document.getElementById('clientSignature'));
@@ -1257,6 +1290,38 @@
             img.src = data.clientSignature;
         }
 
+        async function sendFinalEmailToClient(data, agreementId) {
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            document.getElementById('loadingText').textContent = "Sending final copy to client...";
+            loadingOverlay.classList.add('active');
+
+            // Link for client to view the completed agreement
+            const clientLink = `${window.location.origin}${window.location.pathname}?id=${agreementId}`;
+
+            const emailParams = {
+                to_email: data.clientEmail, // Send to Client this time!
+                client_name: data.clientName,
+                client_email: data.clientEmail,
+                client_phone: data.clientPhone,
+                agreement_date: data.date,
+                hosting_option: data.hostingOption === 'optionA' ? 'Option A (Full Suite)' : 'Option B (Lean)',
+                maintenance: data.maintenance === 'yes' ? 'Yes' : 'No',
+                developer_link: clientLink, // Reusing this param to send the link
+                subject: `AGREEMENT SIGNED: Website Development Agreement - ${data.clientName}`
+            };
+
+            try {
+                await emailjs.send(EMAILJS_CONFIG.SERVICE_ID, EMAILJS_CONFIG.TEMPLATE_ID, emailParams);
+                console.log('Final email sent to client!');
+            } catch (error) {
+                console.error('Final email failed:', error);
+                showAlert('Could not send email to client (check console)', 'error', 'devAlertBox');
+            } finally {
+                loadingOverlay.classList.remove('active');
+                document.getElementById('loadingText').textContent = "Sending email to developer..."; // Reset text
+            }
+        }
+
         window.finalizeBothSignatures = async function() {
             if (!storedFormData) {
                 showAlert('No client data found. Please ask client to resubmit.', 'error', 'devAlertBox');
@@ -1282,7 +1347,11 @@
                 }
                 
                 generateFinalPDF(finalData);
-                showAlert('Agreement completed! Final PDF downloaded.', 'success', 'devAlertBox');
+                
+                // NEW: Send email to client
+                await sendFinalEmailToClient(finalData, currentAgreementId);
+                
+                showAlert('Agreement completed! Final PDF downloaded and sent to client.', 'success', 'devAlertBox');
                 
             } catch (error) {
                 console.error("Finalize Error:", error);
