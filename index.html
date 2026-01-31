@@ -657,19 +657,35 @@
                         </div>
                     </div>
 
-                    <!-- Section 2: Project Summary -->
+                    <!-- Section 2: Project Scope & Technical Specifications -->
                     <div class="section">
                         <h2 class="section-title">
                             <span class="section-number">2</span>
-                            Project Summary & Features
+                            Project Scope & Technical Specifications
                         </h2>
-                        <p>The Developer will build a professional, mobile-responsive website including:</p>
+                        <p>The Developer will design and develop a professional, mobile-responsive pharmacy website including:</p>
                         <ul class="feature-list">
-                            <li><strong>Core Sections:</strong> Home, About Us, Services, Contact, and Opening Hours</li>
+                            <li><strong>Informational Pages:</strong> Home, About Us, Services, Contact, and Opening Hours</li>
                             <li><strong>WhatsApp Integration:</strong> Direct 'Click-to-Chat' button for patient inquiries</li>
-                            <li><strong>Google Maps:</strong> Interactive map for easy navigation to the pharmacy</li>
-                            <li><strong>Prescription Inquiry:</strong> A dedicated section for patients to send prescription photos</li>
+                            <li><strong>Google Maps:</strong> Interactive map for easy navigation to the pharmacy location</li>
+                            <li><strong>Contact Details:</strong> Clear display of phone numbers, physical address, and hours</li>
+                            <li><strong>General Visibility:</strong> Optimized for basic search engine presence and local discovery</li>
                         </ul>
+
+                        <p style="margin-top: 1.5rem; border-top: 1px solid var(--border); padding-top: 1.5rem;"><strong>Technical Boundaries (Standard Package):</strong></p>
+                        <p style="font-size: 0.9rem; color: var(--text-light); margin-bottom: 0.5rem;">To maintain project efficiency and cost-effectiveness, the following advanced features are excluded from this agreement:</p>
+                        <ul class="bullet-list" style="font-size: 0.9rem;">
+                            <li>E-commerce functionality or online catalogs with checkout/payment processing</li>
+                            <li>Inventory management systems or real-time stock tracking</li>
+                            <li>Multi-user dashboards or staff login/account systems</li>
+                            <li>Real-time syncing across multiple devices or pharmacy branches</li>
+                            <li>AI-driven chatbots or automated customer support automation</li>
+                            <li>Custom-built backend databases or deep data-driven applications</li>
+                            <li>Integrations with third-party software not specifically named in this scope</li>
+                        </ul>
+                        <p style="margin-top: 1rem; font-size: 0.85rem; padding: 0.75rem; background: #fffbe6; border-radius: 6px;">
+                            <em>* Any features outside this defined scope will be treated as Phase 2 and will require a separate agreement, timeline, and cost structure.</em>
+                        </p>
                     </div>
 
                     <!-- Section 3: Investment & Payment -->
@@ -754,7 +770,7 @@
                         <p style="margin-bottom: 1rem;"><strong>This agreement includes:</strong></p>
                         <ul class="bullet-list">
                             <li><strong>Client Responsibilities:</strong> Provide content within 24 hours, feedback within 48 hours</li>
-                            <li><strong>Project Scope:</strong> Includes website, WhatsApp, maps; Excludes e-commerce, logo design</li>
+                            <li><strong>Project Scope:</strong> Defined in Section 2 (Includes: website, WhatsApp, maps; Excludes: e-commerce, custom databases, AI systems)</li>
                             <li><strong>Ownership:</strong> Client owns website upon full payment</li>
                             <li><strong>Payment Terms:</strong> Deposit non-refundable; Late fee KSh 500 after 7 days</li>
                             <li><strong>Post-Launch:</strong> 14-day warranty, training included</li>
@@ -1044,10 +1060,43 @@
 
             } else {
                 // CLIENT MODE
+                
+                // NEW: Check if this is a client viewing a completed agreement (via email link)
+                if (agreementIdFromUrl) {
+                    try {
+                        const data = await fetchAgreementFromFirebase(agreementIdFromUrl);
+                        if (data && data.status === 'completed') {
+                            // Show read-only view of the final agreement
+                            document.getElementById('clientView').innerHTML = `
+                                <div class="success-container" style="text-align: center; padding: 3rem;">
+                                    <div style="background: #27ae60; color: white; width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; font-size: 2rem;">✓</div>
+                                    <h1 style="color: #27ae60; font-family: 'Playfair Display', serif; margin-bottom: 1rem;">Agreement Completed</h1>
+                                    <p style="font-size: 1.2rem; margin-bottom: 2rem;">This agreement has been signed by both parties.</p>
+                                    
+                                    <div style="background: #f8f9fa; padding: 2rem; border-radius: 12px; margin-bottom: 2rem; text-align: left;">
+                                        <p><strong>Client:</strong> ${data.clientName}</p>
+                                        <p><strong>Date:</strong> ${data.date}</p>
+                                        <p><strong>Status:</strong> <span style="color: #27ae60; font-weight: bold;">Fully Signed</span></p>
+                                    </div>
+
+                                    <button onclick="generateFinalPDF(${JSON.stringify(data).replace(/"/g, '&quot;')})" class="btn btn-primary">
+                                        Download Final PDF
+                                    </button>
+                                </div>
+                            `;
+                            return; // Stop further initialization
+                        }
+                    } catch (e) {
+                         console.error("Error fetching for client view", e);
+                    }
+                }
+
                 const hasSubmitted = localStorage.getItem('agreementSubmitted');
+                const submissionDate = localStorage.getItem('submissionDate');
                 if (hasSubmitted === 'true') {
-                   // Optional: block resubmission or just show warning
-                   // document.getElementById('alreadySubmittedWarning').classList.remove('hidden');
+                   document.getElementById('clientView').classList.add('hidden');
+                   document.getElementById('alreadySubmittedWarning').classList.remove('hidden');
+                   document.getElementById('submissionDate').textContent = submissionDate || 'Unknown date';
                 }
 
                 clientPad = new SignaturePad(document.getElementById('clientSignature'));
@@ -1257,6 +1306,38 @@
             img.src = data.clientSignature;
         }
 
+        async function sendFinalEmailToClient(data, agreementId) {
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            document.getElementById('loadingText').textContent = "Sending final copy to client...";
+            loadingOverlay.classList.add('active');
+
+            // Link for client to view the completed agreement
+            const clientLink = `${window.location.origin}${window.location.pathname}?id=${agreementId}`;
+
+            const emailParams = {
+                to_email: data.clientEmail, // Send to Client this time!
+                client_name: data.clientName,
+                client_email: data.clientEmail,
+                client_phone: data.clientPhone,
+                agreement_date: data.date,
+                hosting_option: data.hostingOption === 'optionA' ? 'Option A (Full Suite)' : 'Option B (Lean)',
+                maintenance: data.maintenance === 'yes' ? 'Yes' : 'No',
+                developer_link: clientLink, // Reusing this param to send the link
+                subject: `AGREEMENT SIGNED: Website Development Agreement - ${data.clientName}`
+            };
+
+            try {
+                await emailjs.send(EMAILJS_CONFIG.SERVICE_ID, EMAILJS_CONFIG.TEMPLATE_ID, emailParams);
+                console.log('Final email sent to client!');
+            } catch (error) {
+                console.error('Final email failed:', error);
+                showAlert('Could not send email to client (check console)', 'error', 'devAlertBox');
+            } finally {
+                loadingOverlay.classList.remove('active');
+                document.getElementById('loadingText').textContent = "Sending email to developer..."; // Reset text
+            }
+        }
+
         window.finalizeBothSignatures = async function() {
             if (!storedFormData) {
                 showAlert('No client data found. Please ask client to resubmit.', 'error', 'devAlertBox');
@@ -1282,7 +1363,11 @@
                 }
                 
                 generateFinalPDF(finalData);
-                showAlert('Agreement completed! Final PDF downloaded.', 'success', 'devAlertBox');
+                
+                // NEW: Send email to client
+                await sendFinalEmailToClient(finalData, currentAgreementId);
+                
+                showAlert('Agreement completed! Final PDF downloaded and sent to client.', 'success', 'devAlertBox');
                 
             } catch (error) {
                 console.error("Finalize Error:", error);
